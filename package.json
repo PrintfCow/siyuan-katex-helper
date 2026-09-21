@@ -1,0 +1,40 @@
+{
+  "name": "siyuan-katex-helper",
+  "version": "1.0.0",
+  "description": "思源笔记 KaTeX 公式书写辅助插件：修复方向键呼出编辑窗口时的默认全选，并提供 LaTeX 代码补全。",
+  "private": true,
+  "license": "MIT",
+  "author": "PrintfCow",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PrintfCow/siyuan-katex-helper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PrintfCow/siyuan-katex-helper/issues"
+  },
+  "homepage": "https://github.com/PrintfCow/siyuan-katex-helper#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "gen:db": "node scripts/gen-latex-db.mjs",
+    "gen:icon": "node scripts/gen-icon.mjs",
+    "gen": "npm run gen:db && npm run gen:icon",
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "package": "npm run build && node scripts/package.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "test:e2e": "npm run build && node scripts/e2e.mjs",
+    "test:layout": "npm run build && node scripts/visual.mjs",
+    "test:all": "npm run typecheck && npm test && npm run test:e2e && npm run test:layout",
+    "make-link": "npm run build && node scripts/install.mjs --link",
+    "make-install": "npm run package && node scripts/install.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "katex": "^0.18.7",
+    "siyuan": "^1.2.7",
+    "typescript": "^7.0.2"
+  }
+}

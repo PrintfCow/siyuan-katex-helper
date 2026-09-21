@@ -1,0 +1,15 @@
+# 依赖与构建产物
+node_modules/
+dist/
+package.zip
+
+# 测试与调研临时目录
+.e2e/
+.tmp-test/
+.research/
+
+# 编辑器 / 系统
+*.log
+.DS_Store
+.idea/
+.vscode/

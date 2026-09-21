@@ -1,0 +1,39 @@
+{
+  "name": "siyuan-katex-helper",
+  "author": "PrintfCow",
+  "url": "https://github.com/PrintfCow/siyuan-katex-helper",
+  "version": "1.0.0",
+  "minAppVersion": "3.8.0",
+  "disabledInPublish": false,
+  "backends": [
+    "all"
+  ],
+  "frontends": [
+    "desktop",
+    "desktop-window",
+    "mobile",
+    "browser-desktop",
+    "browser-mobile"
+  ],
+  "displayName": {
+    "default": "KaTeX Formula Helper",
+    "zh_CN": "KaTeX 公式助手"
+  },
+  "description": {
+    "default": "Fixes the select-all when the inline-math editor opens via arrow keys, and adds LaTeX command completion with brace auto-fill and Tab stops inside the formula editor.",
+    "zh_CN": "修复方向键呼出行内公式编辑窗口时默认全选内容的问题，并在公式编辑窗口中提供 LaTeX 命令代码补全（回车确认、自动补齐花括号、Tab 依次跳转）。"
+  },
+  "readme": {
+    "default": "README.md",
+    "zh_CN": "README_zh_CN.md"
+  },
+  "keywords": [
+    "katex",
+    "latex",
+    "math",
+    "formula",
+    "completion",
+    "公式",
+    "补全"
+  ]
+}

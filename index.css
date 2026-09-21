@@ -1,0 +1,86 @@
+/* KaTeX 公式助手 —— 补全列表样式
+   面板外壳复用思源自带的 .protyle-hint（position:fixed / 主题色），
+   但下面这几条是本插件自己兜底的，避免依赖主题是否定义了变量。 */
+
+/* 用两个类提高优先级，确保能盖住思源 base.css 与主题里的 .protyle-hint 规则 */
+.protyle-hint.katex-helper__hint {
+    /* 主题没定义 --b3-menu-background 时也要有不透明底色，
+       否则弹窗会变成透明的，列表文字看起来就像「冲出菜单」 */
+    --kh-bg: var(--b3-menu-background, var(--b3-theme-background, #ffffff));
+    --kh-border: var(--b3-theme-surface-lighter, var(--b3-border-color, rgba(128, 128, 128, 0.22)));
+
+    background-color: var(--kh-bg);
+    border: 1px solid var(--kh-border);
+    border-radius: var(--b3-border-radius-b, 8px);
+    box-shadow: var(--b3-dialog-shadow, 0 4px 18px rgba(0, 0, 0, 0.16));
+    box-sizing: border-box;
+
+    padding: 8px 0;
+    /* 内容必须被盒子裁剪：既不能溢出菜单，也不能把滚动传递给页面 */
+    overflow: hidden auto !important;
+    overscroll-behavior: contain;
+
+    min-width: 240px;
+    max-width: min(460px, 80vw);
+}
+
+:root[data-theme-mode="dark"] .protyle-hint.katex-helper__hint {
+    --kh-bg: var(--b3-menu-background, var(--b3-theme-background, #2b2b2b));
+    --kh-border: var(--b3-theme-surface-lighter, var(--b3-border-color, rgba(255, 255, 255, 0.16)));
+}
+
+.katex-helper__hint .b3-list-item {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;          /* 行高固定，不被 flex 压缩 */
+    width: calc(100% - 16px);
+    min-height: 30px;
+    height: auto;
+    padding: 0 10px;
+    line-height: 22px;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+/* 预览列固定宽度：既保证每行左侧对齐，也保证再宽的内容都不会撑破行 */
+.katex-helper__preview {
+    flex: 0 0 46px;
+    width: 46px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin-right: 10px;
+    overflow: hidden;
+    white-space: nowrap;
+    color: var(--b3-theme-on-surface);
+}
+
+.katex-helper__preview .katex {
+    font-size: 1em;
+}
+
+.katex-helper__name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: start;
+    font-family: var(--b3-font-family-code, monospace);
+    font-size: 13px;
+}
+
+.katex-helper__name mark {
+    padding: 0;
+    background: transparent;
+    color: var(--b3-theme-primary);
+    font-weight: 600;
+}
+
+.katex-helper__kind {
+    flex: 0 0 auto;
+    margin-left: 10px;
+    color: var(--b3-theme-on-surface-light);
+    font-size: 12px;
+}

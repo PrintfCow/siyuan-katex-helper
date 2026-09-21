@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 逻辑测试
+        run: npm test
+
+      - name: 构建
+        run: npm run build
+
+      # 浏览器端测试会加载思源真实的 base.css 与主题变量。
+      # GitHub 运行器上没有安装思源，因此这两个步骤会自动跳过并打印提示，不算失败。
+      - name: 端到端测试
+        run: npm run test:e2e
+
+      - name: 布局回归测试
+        run: npm run test:layout
+
+      - name: 打包
+        run: node scripts/package.mjs
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: package.zip
+          if-no-files-found: error

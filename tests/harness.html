@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8"/>
+    <title>RUNNING</title>
+    <!-- 使用思源真实样式表，保证 position:fixed / 显示隐藏等行为与线上一致 -->
+    <link rel="stylesheet" href="/base.css"/>
+    <link rel="stylesheet" href="/stage/protyle/js/katex/katex.min.css"/>
+    <link rel="stylesheet" href="/index.css"/>
+    <!-- 与真实思源一致：用户打开公式面板时，KaTeX 早已由 mathRender 加载完毕 -->
+    <script src="/stage/protyle/js/katex/katex.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        .protyle-wysiwyg { padding: 20px; min-height: 200px; }
+    </style>
+</head>
+<body>
+<!-- 复刻思源编辑器里行内公式的真实结构 -->
+<div class="protyle" id="protyle">
+    <div class="protyle-wysiwyg" id="wysiwyg" contenteditable="true" spellcheck="false">
+        <div data-node-id="20250101000000-0000001" data-type="NodeParagraph" class="p">
+            <!-- 复刻 Lute 真实产出的结构：行内公式两侧会有 <wbr> 与零宽字符 -->
+            <div contenteditable="true" spellcheck="false" id="para">前文<wbr><span id="math1"
+                                                                             data-type="inline-math"
+                                                                             data-subtype="math"
+                                                                             data-content="x^2">x²</span>&#8203;<wbr>后文
+            </div>
+            <div class="protyle-attr" contenteditable="false">&#8203;</div>
+        </div>
+    </div>
+
+    <!-- 复刻思源 Toolbar.subElement（公式编辑面板）的真实结构 -->
+    <div class="protyle-util fn__none" id="panel">
+        <div class="fn__flex-column">
+            <div class="block__icons block__icons--menu fn__flex">
+                <span class="fn__flex-1 resize__move" id="panelTitle" style="line-height: 24px;">
+                    行级公式
+                </span>
+                <span class="fn__space"></span>
+                <button data-type="refresh" class="block__icon block__icon--show block__icon--active"><svg><use
+                        xlink:href="#iconRefresh"></use></svg></button>
+                <button data-type="close" class="block__icon block__icon--show"><svg><use xlink:href="#iconClose"></use></svg></button>
+            </div>
+            <div class="protyle-util__scroll">
+                <div class="fn__flex">
+                    <div class="protyle-linenumber__rows"></div>
+                    <textarea id="mathInput" spellcheck="false"
+                              class="b3-text-field b3-text-field--text fn__flex-1"
+                              style="overflow:hidden;resize:none;"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<pre id="results">pending</pre>
+
+<script>
+    /* ---------------------------------------------------- 思源运行时环境模拟 */
+    window.__errors = [];
+    window.addEventListener("error", (e) => window.__errors.push("window.error: " + e.message));
+
+    window.siyuan = {
+        zIndex: 10,
+        languages: {
+            "inline-math": "行级公式",
+            math: "公式块",
+            memo: "备注",
+        },
+        config: {keymap: {editor: {insert: {"inline-math": {custom: "⌘M"}}}}},
+    };
+
+    class PluginShim {
+        constructor() {
+            this.i18n = {};
+            this.name = "siyuan-katex-helper";
+            this.displayName = "KaTeX 公式助手";
+            this.setting = null;
+        }
+        async loadData() { return null; }
+        async saveData() { return null; }
+        openSetting() {}
+    }
+
+    class SettingShim {
+        constructor(options) { this.options = options; this.items = []; }
+        addItem(item) {
+            this.items.push(item);
+            try {
+                const el = item.createActionElement ? item.createActionElement() : item.actionElement;
+                if (!el || !el.tagName) throw new Error("createActionElement 未返回元素");
+            } catch (error) {
+                window.__errors.push("setting[" + item.title + "]: " + error.message);
+            }
+        }
+        open() {}
+    }
+
+    window.require = (name) => (name === "siyuan" ? {Plugin: PluginShim, Setting: SettingShim} : undefined);
+    window.__settingInstance = null;
+</script>
+
+<!-- 用思源完全相同的加载方式（window.eval 包裹的 CommonJS）载入真实构建产物 -->
+<script src="/tests/loader.js"></script>
+
+<script>
+    /* ------------------------------------------------------------ 断言工具 */
+    const results = [];
+    const ok = (name, condition, detail) => results.push({name, pass: Boolean(condition), detail: detail || ""});
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const $ = (id) => document.getElementById(id);
+    const wysiwyg = $("wysiwyg");
+    const panel = $("panel");
+    const textarea = $("mathInput");
+    const mathSpan = $("math1");
+    const popup = () => document.querySelector(".katex-helper__hint");
+    const popupItems = () => [...document.querySelectorAll(".katex-helper__hint .b3-list-item")];
+    const focusedItem = () => document.querySelector(".katex-helper__hint .b3-list-item--focus");
+
+    const key = (el, k, init) => el.dispatchEvent(new KeyboardEvent("keydown", Object.assign({
+        key: k, bubbles: true, cancelable: true,
+    }, init || {})));
+
+    /** 模拟在光标处真实输入（含 input 事件） */
+    const typeInto = (text) => {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        textarea.value = textarea.value.slice(0, start) + text + textarea.value.slice(end);
+        const caret = start + text.length;
+        textarea.setSelectionRange(caret, caret);
+        textarea.dispatchEvent(new Event("input", {bubbles: true}));
+    };
+
+    const setCaretInWysiwyg = (node, offset) => {
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+    };
+
+    /** 模拟思源核心在 keydown（冒泡阶段，绑定在 wysiwyg 上）里打开公式编辑面板 */
+    const simulateCoreOpen = () => {
+        wysiwyg.addEventListener("keydown", (event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+            const range = document.createRange();
+            range.selectNode(mathSpan);          // ← 核心会选中整个公式节点
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            textarea.value = mathSpan.getAttribute("data-content");
+            panel.classList.remove("fn__none");  // 显示面板
+            textarea.focus();
+            textarea.select();                   // ← 这就是「默认全选」的根因
+        });
+    };
+
+    /* ---------------------------------------------------------------- 用例 */
+    async function run() {
+        // 注册「模拟思源核心打开面板」的冒泡监听（对应核心在 wysiwyg 上的 keydown）
+        simulateCoreOpen();
+        // 等待 loader.js 以思源的方式把插件加载完成
+        for (let i = 0; i < 250 && !window.__pluginEnabled; i++) {
+            await sleep(20);
+        }
+        ok("插件 bundle 加载成功", Boolean(window.__katexHelperPlugin), "window.__katexHelperPlugin 未定义");
+        ok("插件已是启用状态", window.__pluginEnabled === true, "onload 未完成");
+
+        /* ---------- 功能一：方向键呼出面板时不全选 ---------- */
+        const para = $("para");
+        const beforeText = [...para.childNodes].find(
+            (node) => node.nodeType === Node.TEXT_NODE && node.textContent.includes("前文"));
+        const afterText = mathSpan.nextSibling;   // 公式后的零宽字符文本节点
+        ok("测试 DOM 与思源一致（公式前后有 wbr / 零宽字符）",
+            Boolean(beforeText) && afterText.nodeType === Node.TEXT_NODE &&
+            afterText.textContent.replace(/\u200B/g, "") === "",
+            `before=${Boolean(beforeText)} afterSibling=${afterText && afterText.nodeName}`);
+
+        setCaretInWysiwyg(afterText, 1);         // 光标紧贴公式右侧（零宽字符之后）
+        key(wysiwyg, "ArrowLeft");
+        ok("核心确实打开了面板", !panel.classList.contains("fn__none"));
+        await sleep(60);
+        ok("功能①：← 呼出面板后不再全选",
+            !(textarea.selectionStart === 0 && textarea.selectionEnd === textarea.value.length),
+            `selection=[${textarea.selectionStart},${textarea.selectionEnd}] len=${textarea.value.length}`);
+        ok("功能①：← 呼出后光标落在公式末尾",
+            textarea.selectionStart === textarea.value.length && textarea.selectionEnd === textarea.value.length,
+            `caret=${textarea.selectionStart} len=${textarea.value.length}`);
+
+        // 从左侧用 → 进入（光标在「前文」末尾，中间隔着 <wbr>）
+        setCaretInWysiwyg(beforeText, beforeText.textContent.length);
+        panel.classList.add("fn__none");
+        key(wysiwyg, "ArrowRight");
+        await sleep(60);
+        ok("功能①：→ 呼出后光标落在公式开头",
+            textarea.selectionStart === 0 && textarea.selectionEnd === 0,
+            `caret=[${textarea.selectionStart},${textarea.selectionEnd}]`);
+
+        /* ---------- 功能二：代码补全 ---------- */
+        textarea.value = "";
+        textarea.focus();
+        textarea.setSelectionRange(0, 0);
+        textarea.dispatchEvent(new Event("input", {bubbles: true}));
+        await sleep(20);
+        ok("无输入时不弹出补全", !popup() || popup().classList.contains("fn__none"));
+
+        typeInto("alp");
+        await sleep(60);
+        ok("输入英文后弹出补全列表", Boolean(popup()) && !popup().classList.contains("fn__none"),
+            "补全面板不可见");
+        ok("补全列表有内容", popupItems().length > 0, `items=${popupItems().length}`);
+        ok("首选为 alpha", (popupItems()[0]?.textContent || "").includes("\\alpha"),
+            "实际：" + (popupItems()[0]?.textContent || ""));
+        ok("命中字母被高亮", Boolean(popupItems()[0]?.querySelector("mark")));
+        let previewReady = false;
+        for (let i = 0; i < 40 && !previewReady; i++) {
+            previewReady = Boolean(popupItems()[0]?.querySelector(".katex"));
+            if (!previewReady) await sleep(25);
+        }
+        ok("有 KaTeX 预览", previewReady);
+
+        const beforeDown = focusedItem()?.textContent;
+        key(textarea, "ArrowDown");
+        await sleep(20);
+        ok("↓ 可以切换选中项", focusedItem()?.textContent !== beforeDown,
+            `before=${beforeDown} after=${focusedItem()?.textContent}`);
+        key(textarea, "ArrowUp");
+        await sleep(20);
+        ok("↑ 可以切回上一项", focusedItem()?.textContent === beforeDown);
+
+        key(textarea, "Enter");
+        await sleep(60);
+        ok("回车确认无花括号命令", textarea.value === "\\alpha", `value=${JSON.stringify(textarea.value)}`);
+        ok("回车后补全列表关闭", !popup() || popup().classList.contains("fn__none"));
+        ok("无花括号时光标在末尾", textarea.selectionStart === 6 && textarea.selectionEnd === 6,
+            `caret=${textarea.selectionStart}`);
+
+        /* ---------- 花括号补齐 + Tab 跳转 ---------- */
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("fra");
+        await sleep(60);
+        ok("fra 首选为 frac", (popupItems()[0]?.textContent || "").includes("\\frac"),
+            "实际：" + (popupItems()[0]?.textContent || ""));
+        key(textarea, "Enter");
+        await sleep(60);
+        ok("确认后自动补齐花括号", textarea.value === "\\frac{}{}", `value=${JSON.stringify(textarea.value)}`);
+        ok("光标定位到第一个花括号内", textarea.selectionStart === 6 && textarea.selectionEnd === 6,
+            `caret=${textarea.selectionStart}`);
+
+        textarea.value = "\\frac{a}{}";
+        textarea.setSelectionRange(7, 7);
+        textarea.dispatchEvent(new Event("input", {bubbles: true}));
+        key(textarea, "Tab");
+        await sleep(20);
+        ok("输入内容后 Tab 跳到下一个花括号",
+            textarea.selectionStart === 9 && textarea.selectionEnd === 9,
+            `caret=${textarea.selectionStart} value=${JSON.stringify(textarea.value)}`);
+
+        key(textarea, "Tab");
+        await sleep(20);
+        ok("最后一个花括号后 Tab 跳出片段",
+            textarea.selectionStart === 10 && textarea.selectionEnd === 10,
+            `caret=${textarea.selectionStart}`);
+
+        /* ---------- 真实流程：确认片段 → 括号内输入 → Tab ---------- */
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("fra");
+        await sleep(60);
+        key(textarea, "Enter");
+        await sleep(60);
+        typeInto("a");            // 在第一个花括号内输入，会触发补全（预期行为）
+        await sleep(60);
+        ok("花括号内输入字母时补全照常弹出",
+            Boolean(popup()) && !popup().classList.contains("fn__none"));
+        ok("此时补全不会破坏已插入的片段", textarea.value === "\\frac{a}{}",
+            `value=${JSON.stringify(textarea.value)}`);
+        key(textarea, "Tab");
+        await sleep(20);
+        ok("花括号未填完时 Tab 优先跳转而不是确认补全",
+            textarea.selectionStart === 9 && textarea.value === "\\frac{a}{}",
+            `caret=${textarea.selectionStart} value=${JSON.stringify(textarea.value)}`);
+        key(textarea, "Tab");
+        await sleep(20);
+        ok("填完后再次 Tab 跳出片段", textarea.selectionStart === 10,
+            `caret=${textarea.selectionStart}`);
+
+        /* ---------- 多制表位与 Tab 拦截 ---------- */
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("sum");
+        await sleep(60);
+        key(textarea, "Enter");
+        await sleep(60);
+        ok("sum 生成上下限花括号", textarea.value === "\\sum_{}^{}", `value=${JSON.stringify(textarea.value)}`);
+        const tabHandled = key(textarea, "Tab");
+        await sleep(20);
+        ok("Tab 被插件消费（不插入制表符）", !textarea.value.includes("\t"), JSON.stringify(textarea.value));
+        ok("sum 第二次 Tab 到第二个花括号",
+            textarea.selectionStart === 9 && textarea.selectionEnd === 9,
+            `caret=${textarea.selectionStart} value=${JSON.stringify(textarea.value)}`);
+
+        /* ---------- Esc 关闭补全 ---------- */
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("int");
+        await sleep(60);
+        ok("int 弹出补全", Boolean(popup()) && !popup().classList.contains("fn__none"));
+        key(textarea, "Escape");
+        await sleep(20);
+        ok("Esc 关闭补全列表", !popup() || popup().classList.contains("fn__none"));
+
+        /* ---------- 补全插入后原生撤销仍然可用 ---------- */
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("fra");
+        await sleep(60);
+        textarea.focus();
+        key(textarea, "Enter");
+        await sleep(60);
+        const afterAccept = textarea.value;
+        document.execCommand("undo");
+        await sleep(40);
+        ok("补全插入后仍可用原生撤销（Ctrl+Z）",
+            afterAccept === "\\frac{}{}" && textarea.value !== afterAccept,
+            `accept=${JSON.stringify(afterAccept)} undo=${JSON.stringify(textarea.value)}`);
+
+        /* ---------- 非公式面板不应受影响 ---------- */
+        $("panelTitle").textContent = "Mermaid";
+        panel.classList.add("fn__none");
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("alp");
+        await sleep(60);
+        ok("非公式面板不弹出补全", !popup() || popup().classList.contains("fn__none"));
+        $("panelTitle").textContent = "行级公式";
+
+        /* ---------- 卸载 ---------- */
+        try {
+            window.__katexHelperPlugin.onunload();
+            ok("onunload 未抛错", true);
+        } catch (error) {
+            ok("onunload 未抛错", false, error.message);
+        }
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("alp");
+        await sleep(60);
+        ok("卸载后不再弹出补全", !popup() || popup().classList.contains("fn__none"));
+    }
+
+    (async () => {
+        try {
+            await run();
+        } catch (error) {
+            results.push({name: "运行期异常", pass: false, detail: error && error.stack || String(error)});
+        }
+        for (const error of window.__errors) {
+            results.push({name: "控制台错误", pass: false, detail: error});
+        }
+        const failed = results.filter((r) => !r.pass);
+        const lines = results.map((r) => `${r.pass ? "PASS" : "FAIL"}\t${r.name}${r.pass ? "" : "\t" + r.detail}`);
+        document.getElementById("results").textContent =
+            `TOTAL ${results.length} FAILED ${failed.length}\n` + lines.join("\n");
+        document.title = failed.length ? "FAILED" : "PASSED";
+    })();
+</script>
+</body>
+</html>

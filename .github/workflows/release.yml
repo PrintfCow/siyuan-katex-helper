@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 逻辑测试
+        run: npm test
+
+      - name: 构建并打包
+        run: npm run package
+
+      - name: 创建 Release 并附带 package.zip
+        uses: softprops/action-gh-release@v2
+        with:
+          files: package.zip
+          generate_release_notes: true
+          body: |
+            思源笔记插件 **KaTeX 公式助手** 安装包。
+
+            安装：下载 `package.zip` 解压，把 `siyuan-katex-helper` 目录放进
+            `<工作区>/data/plugins/`，重启思源后在 **设置 → 集市 → 已下载** 中启用。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

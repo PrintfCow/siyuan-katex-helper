@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8"/>
+    <title>VISUAL</title>
+    <!-- 与真实思源一致的样式层级：base.css → 主题 → 插件样式 -->
+    <link rel="stylesheet" href="/base.css"/>
+    <link rel="stylesheet" href="/theme.css"/>
+    <link rel="stylesheet" href="/stage/protyle/js/katex/katex.min.css"/>
+    <link rel="stylesheet" href="/index.css"/>
+    <script src="/stage/protyle/js/katex/katex.min.js"></script>
+    <style>html, body { margin: 0; padding: 0; }</style>
+</head>
+<body>
+<div class="protyle" id="protyle">
+    <div class="protyle-wysiwyg" id="wysiwyg" contenteditable="true" spellcheck="false">
+        <div data-node-id="20250101000000-0000001" data-type="NodeParagraph" class="p">
+            <div contenteditable="true" spellcheck="false" id="para">前文<wbr><span id="math1"
+                                                                             data-type="inline-math"
+                                                                             data-subtype="math"
+                                                                             data-content="x^2">x²</span>&#8203;<wbr>后文
+            </div>
+        </div>
+    </div>
+
+    <div class="protyle-util fn__none" id="panel">
+        <div class="fn__flex-column" style="flex:1;min-height:0">
+            <div class="block__icons block__icons--menu fn__flex">
+                <span class="fn__flex-1 resize__move" id="panelTitle" style="line-height: 24px;">公式块</span>
+                <span class="fn__space"></span>
+                <button data-type="refresh" class="block__icon block__icon--show block__icon--active"><svg><use
+                        xlink:href="#iconRefresh"></use></svg></button>
+                <button data-type="close" class="block__icon block__icon--show"><svg><use xlink:href="#iconClose"></use></svg></button>
+            </div>
+            <div class="protyle-util__scroll" style="flex:1;min-height:0">
+                <div class="fn__flex">
+                    <div class="protyle-linenumber__rows"></div>
+                    <textarea id="mathInput" spellcheck="false"
+                              class="b3-text-field b3-text-field--text fn__flex-1"
+                              style="overflow:hidden;resize:none;height:80px"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<pre id="results">pending</pre>
+
+<script>
+    window.__errors = [];
+    window.addEventListener("error", (e) => window.__errors.push("window.error: " + e.message));
+    window.siyuan = {
+        zIndex: 10,
+        languages: {"inline-math": "行级公式", math: "公式块"},
+        config: {keymap: {editor: {insert: {"inline-math": {custom: "⌘M"}}}}},
+    };
+    class PluginShim {
+        constructor() { this.i18n = {}; this.name = "siyuan-katex-helper"; }
+        async loadData() { return null; }
+        async saveData() { return null; }
+        openSetting() {}
+    }
+    class SettingShim {
+        constructor(options) { this.options = options; }
+        addItem() {}
+        open() {}
+    }
+    window.require = (name) => (name === "siyuan" ? {Plugin: PluginShim, Setting: SettingShim} : undefined);
+</script>
+<script src="/tests/loader.js"></script>
+<script>
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const $ = (id) => document.getElementById(id);
+    const textarea = $("mathInput");
+    const panel = $("panel");
+    const results = [];
+    const ok = (name, pass, detail) => results.push(`${pass ? "PASS" : "FAIL"}\t${name}${pass ? "" : "\t" + detail}`);
+
+    const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return {left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right),
+            bottom: Math.round(r.bottom), width: Math.round(r.width), height: Math.round(r.height)};
+    };
+    const overlap = (a, b) => {
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        return w > 0 && h > 0 ? {w: Math.round(w), h: Math.round(h)} : null;
+    };
+
+    /** 把面板摆到指定位置并打开补全列表 */
+    const openPopupAt = async (top, height, query) => {
+        panel.style.cssText = `position:fixed;left:80px;top:${top}px;width:700px;height:${height}px;` +
+            "display:flex;flex-direction:column;padding:0;z-index:20;";
+        panel.classList.remove("fn__none");
+        textarea.value = "";
+        textarea.focus();
+        textarea.setSelectionRange(0, 0);
+        textarea.dispatchEvent(new Event("input", {bubbles: true}));
+        for (const ch of query) {
+            const start = textarea.selectionStart;
+            textarea.value = textarea.value.slice(0, start) + ch + textarea.value.slice(start);
+            textarea.setSelectionRange(start + 1, start + 1);
+            textarea.dispatchEvent(new Event("input", {bubbles: true}));
+        }
+        await sleep(120);
+        return document.querySelector(".katex-helper__hint");
+    };
+
+    const inspect = (popup, label) => {
+        const popupRect = rect(popup);
+        const panelRect = rect(panel);
+        const style = getComputedStyle(popup);
+        const rows = [...popup.querySelectorAll(".b3-list-item")];
+        const alpha = style.backgroundColor.match(/rgba?\(([^)]+)\)/);
+        const parts = alpha ? alpha[1].split(",").map((v) => parseFloat(v)) : [0, 0, 0, 0];
+        const opaque = parts.length < 4 || parts[3] > 0.9;
+        const overlapRect = overlap(popupRect, panelRect);
+        const inViewport = popupRect.top >= 0 && popupRect.left >= 0 &&
+            popupRect.right <= window.innerWidth + 1 && popupRect.bottom <= window.innerHeight + 1;
+
+        ok(`${label}：不遮挡编辑框`, !overlapRect, `重叠 ${JSON.stringify(overlapRect)}`);
+        ok(`${label}：完全在视口内`, inViewport, JSON.stringify(popupRect));
+        ok(`${label}：盒子有不透明底色`, opaque, style.backgroundColor);
+        ok(`${label}：内容被裁剪（overflow-y=${style.overflowY}）`,
+            ["auto", "scroll", "hidden"].includes(style.overflowY), style.overflowY);
+        // 行的可见部分必须落在盒子宽度内（横向溢出会表现为「文字冲出菜单」）
+        const widest = rows.reduce((max, row) => Math.max(max, rect(row).right), 0);
+        ok(`${label}：行宽不超出盒子`, widest <= popupRect.right + 1,
+            `rowRight=${widest} boxRight=${popupRect.right}`);
+        // 关键：用浏览器自己的命中测试验证「盒子外面没有任何列表内容」。
+        // elementFromPoint 遵循与绘制完全相同的裁剪与层级规则，
+        // 所以只要盒子外的探测点命中不到列表行，就说明文字不可能画到菜单外面。
+        const probes = probeOutside(popupRect);
+        ok(`${label}：盒子四周没有内容漏出`, probes.every((p) => p.hit !== "hint"),
+            JSON.stringify(probes.filter((p) => p.hit === "hint")));
+
+        return {
+            label, popupRect, panelRect, rowCount: rows.length,
+            place: popupRect.top >= panelRect.bottom ? "下方" : (popupRect.bottom <= panelRect.top ? "上方" : "重叠"),
+            scroll: `${popup.scrollHeight}/${popup.clientHeight}`,
+            bg: style.backgroundColor,
+        };
+    };
+
+    /** 在盒子四周取点，看命中的是不是补全列表自己 */
+    const probeOutside = (box) => {
+        const cx = box.left + box.width / 2;
+        const cy = box.top + box.height / 2;
+        const points = [
+            {name: "下方", x: cx, y: Math.min(window.innerHeight - 2, box.bottom + 3)},
+            {name: "上方", x: cx, y: Math.max(2, box.top - 3)},
+            {name: "左侧", x: Math.max(2, box.left - 3), y: cy},
+            {name: "右侧", x: Math.min(window.innerWidth - 2, box.right + 3), y: cy},
+        ];
+        return points.map((point) => {
+            const el = document.elementFromPoint(point.x, point.y);
+            const hit = !el ? "none"
+                : (el.closest(".katex-helper__hint") ? "hint"
+                    : (el.closest(".protyle-util") ? "panel" : el.tagName.toLowerCase()));
+            return {name: point.name, x: Math.round(point.x), y: Math.round(point.y), hit};
+        });
+    };
+
+    (async () => {
+        for (let i = 0; i < 250 && !window.__pluginEnabled; i++) await sleep(20);
+
+        const trace = [];
+        // 1) 面板靠上：下方空间充足 → 应在下方
+        let popup = await openPopupAt(60, 420, "fra");
+        let info = inspect(popup, "面板靠上");
+        ok("面板靠上：出现在编辑框下方", info.place === "下方", info.place);
+        trace.push(info);
+
+        // 2) 面板靠下：下方几乎没有空间 → 应翻到上方
+        popup = await openPopupAt(window.innerHeight - 300, 260, "fra");
+        info = inspect(popup, "面板靠下");
+        ok("面板靠下：出现在编辑框上方", info.place === "上方", info.place);
+        trace.push(info);
+
+        // 3) 面板居中：仍不得重叠
+        popup = await openPopupAt(Math.round(window.innerHeight / 2) - 120, 240, "alp");
+        info = inspect(popup, "面板居中");
+        trace.push(info);
+
+        // 4) 大量候选：盒子必须自行滚动而不是把内容漏出去
+        popup = await openPopupAt(60, 420, "a");
+        info = inspect(popup, "候选很多");
+        ok("候选很多：列表内部滚动",
+            popup.scrollHeight > popup.clientHeight && popup.clientHeight > 0,
+            `${popup.scrollHeight}/${popup.clientHeight}`);
+        trace.push(info);
+
+        // 截图用：回到最常见的场景（截图模式下把结果面板藏起来，避免干扰观察）
+        if (location.search.includes("shot=1")) {
+            document.getElementById("results").style.display = "none";
+        }
+        popup = await openPopupAt(60, 420, "fra");
+        // 让列表滚动到中间，顺便验证滚动后依然不漏内容
+        for (let i = 0; i < 6; i++) {
+            textarea.dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowDown", bubbles: true, cancelable: true}));
+        }
+        await sleep(60);
+        if (location.search.includes("shot=1")) {
+            const probe = probeOutside(rect(popup));
+            ok("滚动后盒子四周仍无内容漏出", probe.every((p) => p.hit !== "hint"), JSON.stringify(probe));
+        }
+
+        const lines = [];
+        for (const item of trace) {
+            lines.push(`【${item.label}】panel=${JSON.stringify(item.panelRect)} popup=${JSON.stringify(item.popupRect)} ` +
+                `位置=${item.place} 行数=${item.rowCount} 滚动=${item.scroll} 底色=${item.bg}`);
+        }
+        lines.push("");
+        lines.push(...results);
+        lines.push("errors = " + JSON.stringify(window.__errors));
+        const failed = results.filter((line) => line.startsWith("FAIL")).length;
+        lines.unshift(`TOTAL ${results.length} FAILED ${failed}`);
+        document.getElementById("results").textContent = lines.join("\n");
+        document.title = failed ? "FAILED" : "PASSED";
+    })();
+</script>
+</body>
+</html>
