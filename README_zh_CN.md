@@ -54,7 +54,9 @@
 
 在公式编辑窗口里输入**英文字母**即可弹出补全（**不需要先输入 `\`**）：
 
-- 命令库 **998 条**，由 KaTeX 源码自动生成，另叠加人工精选片段；
+- 命令库 **1000+ 条**，由 KaTeX 源码自动生成，另叠加人工精选片段；
+- **区分大小写**：`Delta` 命中 `\Delta`（Δ），`delta` 命中 `\delta`（δ），两者都会出现在候选里；
+  大小写完全匹配的候选优先，仅大小写不同的候选排在后面（`varDelta` 这类仍照常命中）；
 - 前缀 / 子串 / 模糊三级匹配，`↑` `↓` 选择，`Enter` 确认，`Esc` 关闭，也可鼠标点击；
 - 候选项用 KaTeX **实时渲染**，并高亮命中的字母；
 - **弹窗只出现在编辑框的正上方或正下方，任何情况下都不会遮住编辑框**；
@@ -77,6 +79,8 @@
 | `sqr` | `\sqrt{}` | `{}` → 跳出 |
 | `pmat` | `\begin{pmatrix} & \\ & \end{pmatrix}` | 4 个位置依次跳 |
 | `alp` | `\alpha` | 无括号，直接插入 |
+| `Delta` | `\Delta`（Δ） | 大写命令优先命中大写 |
+| `big` | `\big` + 光标 | 定界符命令不补花括号，直接输入 `(` |
 
 ---
 
@@ -211,16 +215,16 @@ siyuan-katex-helper/
 
 ## 架构与实现原理
 
-### 关键机制（已对照思源 3.8.3 生产包逐条核实）
+### 关键机制（已对照思源 3.8.3 / 3.8.5 生产包逐条核实）
 
 | 事实 | 影响 |
 | --- | --- |
 | 公式编辑面板是 `Toolbar` 的 `subElement`，DOM 为 `div.protyle-util`，内含 `textarea.b3-text-field` | 面板识别 |
 | 面板标题栏 `.resize__move` 的文本是 `window.siyuan.languages["inline-math"]` 或 `languages.math` | 用它区分公式面板与 Mermaid / HTML / 嵌入块面板 |
 | 面板是 `position: fixed`，`offsetParent` 恒为 `null` | 可见性判断只能用 `getClientRects()` |
-| 核心的 `keydown` 绑在 `protyle.wysiwyg.element` 的**冒泡阶段** | 捕获阶段监听可以抢先 |
+| 核心的 `keydown` 绑在 `protyle.wysiwyg.element` 的**冒泡阶段**（3.8.5 仍未加捕获标记） | 捕获阶段监听可以抢先 |
 | 核心**不检查 `event.defaultPrevented`** | 必须 `stopPropagation()` / `stopImmediatePropagation()`，只 `preventDefault()` 无效 |
-| 打开面板时核心执行 `textarea.select()` | 「默认全选」的直接来源 |
+| 打开面板时核心执行 `range.selectNode(公式节点)` 与 `textarea.select()`（3.8.5 代码同上） | 「默认全选」的直接来源 |
 | `--b3-menu-background` **只在主题 CSS 中定义**，`base.css` 里没有 | 弹窗必须自带兜底底色，否则会透明 |
 
 ### 模块职责
@@ -401,7 +405,7 @@ npm run package        # → package.zip
 
 | 项目 | 说明 |
 | --- | --- |
-| 思源版本 | `minAppVersion: 3.8.0`，在 3.8.3 上完整验证 |
+| 思源版本 | `minAppVersion: 3.8.0`，已在 **3.8.3 与 3.8.5** 上完整验证（DOM、CSS、核心按键逻辑逐条比对） |
 | 平台 | 桌面端 / 移动端 / 浏览器端（插件不依赖 Electron 特有 API） |
 | 主题 | 跟随主题变量；弹窗自带兜底底色，主题未定义变量时也不会透明 |
 | 依赖 | 运行时零依赖；`siyuan` 为类型包，运行时由思源提供 |
@@ -414,8 +418,10 @@ npm run package        # → package.zip
   （`protyle.lute.SpinBlockDOM()`）转换的，正文中没有可供补全的 LaTeX 输入态。
 - `\begin{}` / `\end{}` 没有做成镜像制表位，请直接输入环境名
   （如 `pmat`、`cases`、`aligned`），插件会自动补全两端的 `\begin{}` / `\end{}`。
-- 命令库由 KaTeX 0.18 生成，而思源内置的 KaTeX 版本略旧，
-  个别很新的命令在思源里可能渲染失败（不影响插入）。
+- 命令库由 KaTeX 0.18 生成，思源 3.8.5 内置的是 KaTeX 0.16.9，
+  少数新命令（如 `\overbracket`、`\underbracket`）在思源里会渲染失败（不影响插入）。
+- 少数**需要参数的内置宏**（如 `\blue`、`\bra`、`\set`）目前按「无参数」收录，
+  确认后会插入命令名本身，需要自己补参数。
 - 不处理多光标 / 多选：面板打开时若选区非折叠，补全不会弹出。
 
 ---

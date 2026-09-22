@@ -57,7 +57,10 @@ Opening the editor with a **mouse click** keeps SiYuan's original select-all beh
 
 Type **plain English letters** inside the formula editor — **no leading `\` needed**:
 
-- **998 commands**, generated from KaTeX's own source and merged with a curated snippet table;
+- **1000+ commands**, generated from KaTeX's own source and merged with a curated snippet table;
+- **case-sensitive**: `Delta` matches `\Delta` (Δ) while `delta` matches `\delta` (δ), and both stay
+  in the candidate list; exact-case matches rank first, case-insensitive-only matches follow
+  (substring matches such as `varDelta` keep working);
 - prefix / substring / fuzzy matching; `↑` `↓` to choose, `Enter` to confirm, `Esc` to dismiss, or click;
 - candidates are **rendered by KaTeX** with the matched letters highlighted;
 - the popup **only ever appears directly above or below the editor panel and never covers it**;
@@ -75,6 +78,8 @@ Type **plain English letters** inside the formula editor — **no leading `\` ne
 | `sqr` | `\sqrt{}` | `{}` → out |
 | `pmat` | `\begin{pmatrix} & \\ & \end{pmatrix}` | 4 stops |
 | `alp` | `\alpha` | inserted directly |
+| `Delta` | `\Delta` (Δ) | uppercase wins for an uppercase query |
+| `big` | `\big` + caret | delimiters get no braces — just type `(` |
 
 ---
 
@@ -208,16 +213,16 @@ siyuan-katex-helper/
 
 ## Architecture
 
-### Verified facts about SiYuan 3.8.3
+### Verified facts about SiYuan 3.8.3 / 3.8.5
 
 | Fact | Consequence |
 | --- | --- |
 | The formula editor is the `Toolbar`'s `subElement`: `div.protyle-util` containing `textarea.b3-text-field` | how the panel is found |
 | The panel title (`.resize__move`) is `window.siyuan.languages["inline-math"]` or `languages.math` | how math panels are told apart from Mermaid / HTML / embed panels |
 | The panel is `position: fixed`, so `offsetParent` is always `null` | visibility must be tested with `getClientRects()` |
-| The core editor binds `keydown` in the **bubble** phase on `protyle.wysiwyg.element` | a capture-phase listener can run first |
+| The core editor binds `keydown` in the **bubble** phase on `protyle.wysiwyg.element` (still no capture flag in 3.8.5) | a capture-phase listener can run first |
 | Core **never checks `event.defaultPrevented`** | you must `stopPropagation()` / `stopImmediatePropagation()`; `preventDefault()` alone does nothing |
-| Opening the panel runs `textarea.select()` | the direct cause of "select all" |
+| Opening the panel runs `range.selectNode(mathElement)` and then `textarea.select()` (unchanged in 3.8.5) | the direct cause of "select all" |
 | `--b3-menu-background` is defined **only in theme CSS**, not in `base.css` | the popup must ship its own fallback background or it becomes transparent |
 
 ### Module responsibilities
@@ -386,7 +391,7 @@ the editor.
 
 | Item | Notes |
 | --- | --- |
-| SiYuan | `minAppVersion: 3.8.0`; fully verified on 3.8.3 |
+| SiYuan | `minAppVersion: 3.8.0`; fully verified on **3.8.3 and 3.8.5** (DOM, CSS and core key handling compared line by line) |
 | Platforms | desktop / mobile / browser (no Electron-specific APIs) |
 | Themes | follows theme variables; the popup ships fallback colours so it is never transparent |
 | Dependencies | zero runtime dependencies; `siyuan` is a types-only package provided at runtime |
@@ -399,8 +404,10 @@ the editor.
   (`protyle.lute.SpinBlockDOM()`), so there is no LaTeX input state in the document body.
 - `\begin{}` / `\end{}` are not mirrored tab stops — type the environment name (`pmat`, `cases`,
   `aligned`, …) and both ends are filled in.
-- The database is generated from KaTeX 0.18 while SiYuan bundles a slightly older KaTeX; a few very
-  new commands may not render there (insertion still works).
+- The database is generated from KaTeX 0.18 while SiYuan 3.8.5 bundles KaTeX 0.16.9; a few new
+  commands (e.g. `\overbracket`, `\underbracket`) do not render there (insertion still works).
+- A handful of **built-in macros that take arguments** (`\blue`, `\bra`, `\set`, …) are currently
+  stored as zero-argument entries: confirming them inserts the bare command and you add the argument.
 - Multi-cursor / multi-selection is not handled: completion stays hidden while the selection is not
   collapsed.
 

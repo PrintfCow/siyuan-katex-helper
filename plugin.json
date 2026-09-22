@@ -2,7 +2,7 @@
   "name": "siyuan-katex-helper",
   "author": "PrintfCow",
   "url": "https://github.com/PrintfCow/siyuan-katex-helper",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "3.8.0",
   "disabledInPublish": false,
   "backends": [

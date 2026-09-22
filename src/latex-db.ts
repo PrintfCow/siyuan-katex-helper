@@ -179,10 +179,25 @@ const CURATED: Record<string, string> = {
 /** `\begin{环境名}` … `\end{环境名}` 的通用模板 */
 const ENV_TEMPLATE = "\\begin{NAME}$1\\end{NAME}";
 
+/**
+ * 定界符类命令。它们的参数是**定界符本身**（`\Big(` ），而不是分组，
+ * 自动补 `{}` 会得到无法渲染的 `\Big{}`，所以只把光标放到命令后面。
+ * @see KaTeX functions/delimsizing.ts：`argTypes: ["primitive"]`
+ */
+const DELIMITER_COMMANDS = new Set([
+    "big", "Big", "bigg", "Bigg",
+    "bigl", "Bigl", "bigr", "Bigr", "bigm", "Bigm",
+    "biggl", "Biggl", "biggr", "Biggr", "biggm", "Biggm",
+]);
+
 /** 把 `$1` `$2` … 制表位替换成 `\square`，得到可渲染的预览 LaTeX */
 const previewOf = (insert: string, name: string, kind: LatexKind): string => {
     if (kind === "symbol") {
         return "\\" + name;
+    }
+    if (DELIMITER_COMMANDS.has(name)) {
+        // 用一个真实的定界符做预览
+        return "\\" + name + "(";
     }
     if (kind === "environment") {
         return insert.replace(/\$(\d)/g, "\\square");
@@ -192,6 +207,9 @@ const previewOf = (insert: string, name: string, kind: LatexKind): string => {
 
 /** 依据 KaTeX 的参数个数自动生成插入内容与制表位 */
 const autoInsert = (name: string, args: number, opt: number): string => {
+    if (DELIMITER_COMMANDS.has(name)) {
+        return "\\" + name + "$1";
+    }
     let out = "\\" + name;
     let n = 1;
     for (let i = 0; i < opt; i++) {
@@ -211,10 +229,11 @@ export const getDatabase = (): LatexItem[] => {
         return cached;
     }
     const map = new Map<string, LatexItem>();
+    // 注意：这里必须区分大小写去重。LaTeX 中 `\delta` 与 `\Delta`、`\gamma` 与 `\Gamma`、
+    // `bmatrix` 与 `Bmatrix` 是**不同**的命令，忽略大小写会把大写形式整条丢弃。
     const put = (item: LatexItem) => {
-        const key = item.name.toLowerCase();
-        if (!map.has(key)) {
-            map.set(key, item);
+        if (!map.has(item.name)) {
+            map.set(item.name, item);
         }
     };
 
@@ -281,44 +300,75 @@ export interface SearchResult {
     highlight: [number, number] | null;
 }
 
+/** 完全匹配得分 */
+const SCORE_EXACT = 2000;
+/** 前缀匹配得分 */
+const SCORE_PREFIX = 1500;
+/** 子串匹配得分 */
+const SCORE_SUBSTRING = 1000;
+/** 模糊（子序列）匹配得分 */
+const SCORE_FUZZY = 400;
+/**
+ * 只有忽略大小写才命中时的降权。
+ * 取值等于一档匹配质量（1500 → 1000 的跨度），也就是把「大小写不对的完全匹配」
+ * 降到「大小写正确的子串匹配」之上、但低于任何大小写正确的匹配。
+ */
+const CASE_MISMATCH_PENALTY = 150;
+
+interface NameMatch {
+    score: number;
+    highlight: [number, number] | null;
+}
+
+/** 在 `name` 中按 `query` 打分；未命中返回 null */
+const matchName = (name: string, query: string, fuzzy: boolean): NameMatch | null => {
+    if (name === query) {
+        return {score: SCORE_EXACT, highlight: [0, query.length]};
+    }
+    if (name.startsWith(query)) {
+        return {score: SCORE_PREFIX - (name.length - query.length), highlight: [0, query.length]};
+    }
+    const idx = name.indexOf(query);
+    if (idx > 0) {
+        return {score: SCORE_SUBSTRING - idx * 4 - (name.length - query.length), highlight: [idx, idx + query.length]};
+    }
+    if (fuzzy) {
+        const sub = subsequenceScore(name, query);
+        if (sub > 0) {
+            return {score: SCORE_FUZZY + sub, highlight: null};
+        }
+    }
+    return null;
+};
+
 /** 依据输入内容检索命令 */
 export const searchItems = (query: string, fuzzy: boolean, limit: number): SearchResult[] => {
-    const q = query.toLowerCase();
-    if (!q) {
+    if (!query) {
         return [];
     }
+    const q = query.toLowerCase();
     const db = getDatabase();
     const scored: {item: LatexItem; score: number; highlight: [number, number] | null}[] = [];
 
     for (const item of db) {
-        const name = item.name.toLowerCase();
-        let score = -1;
-        let highlight: [number, number] | null = null;
-
-        if (name === q) {
-            score = 2000;
-            highlight = [0, q.length];
-        } else if (name.startsWith(q)) {
-            score = 1500 - (name.length - q.length);
-            highlight = [0, q.length];
-        } else {
-            const idx = name.indexOf(q);
-            if (idx > 0) {
-                score = 1000 - idx * 4 - (name.length - q.length);
-                highlight = [idx, idx + q.length];
-            } else if (fuzzy) {
-                const sub = subsequenceScore(name, q);
-                if (sub > 0) {
-                    score = 400 + sub;
-                }
+        // 先区分大小写匹配，让 `Delta` 命中 `\Delta`、`delta` 命中 `\delta`；
+        // 只有区分大小写完全命中不了时，才退回忽略大小写并降权。
+        let match = matchName(item.name, query, fuzzy);
+        if (!match) {
+            const insensitive = matchName(item.name.toLowerCase(), q, fuzzy);
+            if (!insensitive) {
+                continue;
             }
+            insensitive.score -= CASE_MISMATCH_PENALTY;
+            match = insensitive;
         }
+        let score = match.score;
         // 精选片段略微加权
-        if (score > 0 && item.kind === "snippet") {
+        if (item.kind === "snippet") {
             score += 25;
         }
         if (score > 0) {
-            scored.push({item, score, highlight});
+            scored.push({item, score, highlight: match.highlight});
         }
     }
 

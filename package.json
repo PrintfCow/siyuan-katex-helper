@@ -1,6 +1,6 @@
 {
   "name": "siyuan-katex-helper",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "思源笔记 KaTeX 公式书写辅助插件：修复方向键呼出编辑窗口时的默认全选，并提供 LaTeX 代码补全。",
   "private": true,
   "license": "MIT",

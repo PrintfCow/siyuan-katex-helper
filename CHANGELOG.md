@@ -5,6 +5,42 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.1] - 2026-09-22
+
+### 修复
+
+- **补全不区分大小写，导致大写命令整条丢失**：命令库用「名称转小写」去重，
+  于是 `delta` 入库后 `Delta` 被静默丢弃——`\Delta`(Δ) 与 `\delta`(δ) 渲染结果不同，
+  但搜索 `Delta` 只会给出小写项。现在改为**区分大小写去重**，
+  共恢复 105 条命令（大小写字母、`\Bmatrix` / `\Vmatrix` 等环境、
+  `\Rightarrow` / `\Uparrow` 等箭头、`\xLeftarrow` 等）。
+  检索也改为**优先大小写完全匹配**：`Delta` 首选 `\Delta`、`delta` 首选 `\delta`，
+  大小写不同但更长的子串命中（如 `varDelta`）仍然照常出现。
+- **定界符命令插入了无法渲染的花括号**：`\big` `\Bigl` 等 16 个命令的参数是定界符
+  本身（`\Big(`），自动补 `{}` 会得到渲染失败的 `\Big{}`；
+  现在改为把光标放到命令之后，预览使用真实的 `(`。
+- **收录了仅文本模式下可用的符号**：`\AE` `\O` `\OE` `\ss` `\textbar` 等 67 条
+  `defineSymbol(text, …)` 定义在数学模式下并未定义，补全出来必然渲染失败，
+  生成器现在只收录在数学模式下同样有定义的名字。
+
+### 变更
+
+- 命令库由 998 条调整为 1067 条（新增 105 条大小写变体，剔除 43 条无法在数学模式下渲染的符号）。
+
+### 验证
+
+- 对照思源 **3.8.5** 生产包重新核实全部内部依赖事实（公式面板 DOM、`.resize__move` 标题、
+  `keydown` 冒泡阶段绑定、不检查 `defaultPrevented`、打开面板时的 `selectNode` + `textarea.select()`、
+  `--b3-menu-background` 仅存在于主题 CSS），结论与 3.8.3 一致，功能①在 3.8.5 上仍然必要。
+- 三套测试改为直接跑在 3.8.5 的真实 `base.css` / 主题 / 内置 KaTeX（0.16.9）之上。
+
+### 测试
+
+- 36 项纯逻辑测试（新增 12 项大小写与定界符用例）；
+- 46 项无头 Chromium 端到端测试（新增 10 项：`\Delta` / `\delta` / `\Bmatrix` 的检索、插入
+  与 KaTeX 渲染差异）；
+- 27 项布局回归测试。
+
 ## [1.0.0] - 2026-09-21
 
 首个可用版本。
@@ -43,4 +79,5 @@
 - 36 项无头 Chromium 端到端测试（用真实构建产物、按思源相同方式加载）；
 - 27 项布局回归测试（加载思源真实 `base.css` 与主题，含浏览器命中测试探测）。
 
+[1.0.1]: https://github.com/PrintfCow/siyuan-katex-helper/releases/tag/v1.0.1
 [1.0.0]: https://github.com/PrintfCow/siyuan-katex-helper/releases/tag/v1.0.0

@@ -137,9 +137,12 @@ const dec = (lit) => {
 
 /* ---------------------------------------------------------------- symbols */
 const symbols = new Map(); // name(无反斜杠) -> 显示字符
+let textOnlySymbols = 0;
 {
     const text = read("symbols.ts");
     // defineSymbol(math, main, rel, "\u2261", "\\equiv", true);
+    // 第一个参数是**模式**：`text` 模式的符号（\AE \ss \textbar …）在数学模式下并未定义，
+    // 补全出来必然渲染失败，因此只收录在数学模式下也有定义的名字。
     const re = /defineSymbol\s*\(([\s\S]*?)\)\s*;/g;
     let m;
     while ((m = re.exec(text)) !== null) {
@@ -149,8 +152,12 @@ const symbols = new Map(); // name(无反斜杠) -> 显示字符
         const char = dec(args[3]);
         if (typeof name !== "string" || !name.startsWith("\\")) continue;
         const key = name.slice(1);
-        if (!key || symbols.has(key)) continue;
-        symbols.set(key, typeof char === "string" ? char : "");
+        if (!key) continue;
+        if (args[0].trim() === "text") {
+            textOnlySymbols++;
+            continue;
+        }
+        if (!symbols.has(key)) symbols.set(key, typeof char === "string" ? char : "");
     }
 }
 
@@ -220,14 +227,18 @@ const fnArr = [...funcs.entries()]
 const envArr = [...envs].sort();
 const macArr = [...macros].sort();
 
-const gen = `// ⚠️ 本文件由 scripts/gen-latex-db.mjs 自动生成，请勿手工修改。
-//    数据来源：KaTeX ${(() => {
+const katexVersion = (() => {
     try {
         return JSON.parse(fs.readFileSync(path.join(SRC, "..", "package.json"), "utf8")).version;
     } catch {
         return "unknown";
     }
-})()} (${SRC})
+})();
+
+// 不写入源码目录：不同机器上可能是 node_modules/katex/src 或 .research/npm/...，
+// 写进去会让生成结果随环境变化，产生无意义的 diff。
+const gen = `// ⚠️ 本文件由 scripts/gen-latex-db.mjs 自动生成，请勿手工修改。
+//    数据来源：KaTeX ${katexVersion}
 //    重新生成：node scripts/gen-latex-db.mjs
 
 /** 无参数符号命令：[名称(不含反斜杠), 显示字符] */
@@ -248,5 +259,7 @@ fs.mkdirSync(path.dirname(outFile), {recursive: true});
 fs.writeFileSync(outFile, gen);
 console.log(
     `✅ 已生成 ${path.relative(ROOT, outFile)}\n` +
-    `   符号 ${symArr.length} 个 / 函数 ${fnArr.length} 个 / 环境 ${envArr.length} 个 / 宏 ${macArr.length} 个`
+    `   数据来源：KaTeX ${katexVersion}（${SRC}）\n` +
+    `   符号 ${symArr.length} 个 / 函数 ${fnArr.length} 个 / 环境 ${envArr.length} 个 / 宏 ${macArr.length} 个\n` +
+    `   已跳过 ${textOnlySymbols} 条仅文本模式的符号定义（数学模式下不可用）`
 );

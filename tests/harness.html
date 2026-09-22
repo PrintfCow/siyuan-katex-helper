@@ -328,6 +328,59 @@
             afterAccept === "\\frac{}{}" && textarea.value !== afterAccept,
             `accept=${JSON.stringify(afterAccept)} undo=${JSON.stringify(textarea.value)}`);
 
+        /* ---------- 大小写：Delta 与 delta 是不同命令 ---------- */
+        const renderMath = (tex) => {
+            const host = document.createElement("div");
+            window.katex.render(tex, host, {throwOnError: true});
+            return host.innerHTML;
+        };
+        ok("renderMath 可用（思源内置 KaTeX）", typeof window.katex?.render === "function");
+        ok("\\Delta 与 \\delta 渲染结果不同",
+            renderMath("\\Delta") !== renderMath("\\delta"),
+            "两者渲染结果相同，说明命令被当成同一个");
+        ok("\\Bmatrix 可渲染",
+            renderMath("\\begin{Bmatrix}a\\end{Bmatrix}") !==
+            renderMath("\\begin{bmatrix}a\\end{bmatrix}"));
+
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("Delta");
+        await sleep(60);
+        const deltaItems = popupItems().map((item) => item.textContent);
+        ok("输入 Delta 首选 \\Delta", (deltaItems[0] || "").includes("\\Delta"),
+            "候选：" + deltaItems.join(" | "));
+        ok("输入 Delta 时小写 \\delta 仍作为候选出现",
+            deltaItems.some((text) => text.includes("\\delta")), "候选：" + deltaItems.join(" | "));
+        let upperPreview = false;
+        for (let i = 0; i < 40 && !upperPreview; i++) {
+            upperPreview = Boolean(popupItems()[0]?.querySelector(".katex"));
+            if (!upperPreview) await sleep(25);
+        }
+        ok("\\Delta 有 KaTeX 预览", upperPreview);
+
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("delta");
+        await sleep(60);
+        ok("输入 delta 首选 \\delta", (popupItems()[0]?.textContent || "").includes("\\delta"),
+            "实际：" + (popupItems()[0]?.textContent || ""));
+
+        key(textarea, "Enter");
+        await sleep(60);
+        ok("确认后插入的是小写 \\delta", textarea.value === "\\delta", `value=${JSON.stringify(textarea.value)}`);
+
+        textarea.value = "";
+        textarea.setSelectionRange(0, 0);
+        typeInto("Bmatrix");
+        await sleep(60);
+        ok("输入 Bmatrix 首选花括号矩阵环境",
+            (popupItems()[0]?.textContent || "").includes("Bmatrix"),
+            "实际：" + (popupItems()[0]?.textContent || ""));
+        key(textarea, "Enter");
+        await sleep(60);
+        ok("确认后插入 \\begin{Bmatrix}",
+            textarea.value.startsWith("\\begin{Bmatrix}"), `value=${JSON.stringify(textarea.value)}`);
+
         /* ---------- 非公式面板不应受影响 ---------- */
         $("panelTitle").textContent = "Mermaid";
         panel.classList.add("fn__none");
